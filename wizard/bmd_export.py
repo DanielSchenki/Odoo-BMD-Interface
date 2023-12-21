@@ -1,11 +1,27 @@
 import csv
 import re
 import datetime
-import tkinter as tk
-from tkinter import filedialog
 import os
+import io
+import zipfile
 
-from odoo import models, fields, api
+from odoo import models, fields, api, http
+from odoo.http import request
+
+class CsvDownloadController(http.Controller):
+    @http.route('/download', type='http', auth="user")
+    def download_csv(self):
+
+        zipContent = request.env['account.bmd'].combineToZip()
+
+        # Return the ZIP file
+        response = http.request.make_response(zipContent.getvalue(),
+             headers=[
+                 ('Content-Type', 'application/zip'),
+                 ('Content-Disposition', 'attachment; filename="export.zip"')
+             ])
+        return response
+
 
 
 class AccountBmdExport(models.TransientModel):
@@ -63,88 +79,69 @@ class AccountBmdExport(models.TransientModel):
         #
 
         # Create a Tkinter window
-        window = tk.Tk()
+        #window = tk.Tk()
 
 
-        #Angepasst von mir an die Allgemeine Directory!
-        save_path = self.path + '/Sachkonten.csv'
-        directory = os.path.dirname(save_path)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+
 
         # Write the data to the CSV file
-        with open(save_path, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Konto-Nr', 'Bezeichnung', 'Ustcode', 'USTPz', 'Kontoart']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
+        accountBuffer = io.StringIO()
+        fieldnames = ['Konto-Nr', 'Bezeichnung', 'Ustcode', 'USTPz', 'Kontoart']
+        writer = csv.DictWriter(accountBuffer, fieldnames=fieldnames, delimiter=';')
 
-            writer.writeheader()
-            for row in result_data:
-                cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
-                               row.items()}
-                writer.writerow(cleaned_row)
+        writer.writeheader()
+        for row in result_data:
+            cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
+                           row.items()}
+            writer.writerow(cleaned_row)
 
-        window.destroy()
+        #window.destroy()
 
-        return True
+        return accountBuffer.getvalue()
 
-    @api.model
-    def selectPath(self):
-        window = tk.Tk()
-        print("selectPath")
-        self.path = filedialog.askdirectory()
-        window.destroy()
-
-
-    @api.model
     @api.model
     def export_customers(self):
 
         customers = self.env['res.partner'].search([])
 
-        path1 = self.path + '/PersonenkontenAllAccountsBothAccounts.csv'
-        directory = os.path.dirname(path1)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-
         # Write to the CSV file
-        with open(path1, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Konto-Nr', 'Name', 'Straße', 'PLZ', 'Ort', 'Land', 'UID-Nummer', 'E-Mail', 'Webseite',
-                          'Phone', 'IBAN', 'Zahlungsziel', 'Skonto', 'Skontotage']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
+        customerBuffer = io.StringIO()
+        fieldnames = ['Konto-Nr', 'Name', 'Straße', 'PLZ', 'Ort', 'Land', 'UID-Nummer', 'E-Mail', 'Webseite',
+                      'Phone', 'IBAN', 'Zahlungsziel', 'Skonto', 'Skontotage']
+        writer = csv.DictWriter(customerBuffer, fieldnames=fieldnames, delimiter=';')
 
-            writer.writeheader()
-            for customer in customers:
-                # Write row for receivable account
-                writer.writerow({
-                    'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
-                    'Name': customer.name if customer.name else '',
-                    'E-Mail': customer.email if customer.email else '',
-                    'Phone': customer.phone if customer.phone else '',
-                    'Ort': customer.city if customer.city else '',
-                    'Straße': customer.street if customer.street else '',
-                    'PLZ': customer.zip if customer.zip else '',
-                    'Webseite': customer.website if customer.website else '',
-                    'UID-Nummer': customer.vat if customer.vat else '',
-                    'Land': customer.state_id.code if customer.state_id else '',
-                })
-                # Write row for payable account
-                writer.writerow({
-                    'Konto-Nr': customer.property_account_payable_id.code if customer.property_account_payable_id else '',
-                    'Name': customer.name if customer.name else '',
-                    'E-Mail': customer.email if customer.email else '',
-                    'Phone': customer.phone if customer.phone else '',
-                    'Ort': customer.city if customer.city else '',
-                    'Straße': customer.street if customer.street else '',
-                    'PLZ': customer.zip if customer.zip else '',
-                    'Webseite': customer.website if customer.website else '',
-                    'UID-Nummer': customer.vat if customer.vat else '',
-                    'Land': customer.state_id.code if customer.state_id else '',
-                })
+        writer.writeheader()
+        for customer in customers:
+            # Write row for receivable account
+            writer.writerow({
+                'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
+                'Name': customer.name if customer.name else '',
+                'E-Mail': customer.email if customer.email else '',
+                'Phone': customer.phone if customer.phone else '',
+                'Ort': customer.city if customer.city else '',
+                'Straße': customer.street if customer.street else '',
+                'PLZ': customer.zip if customer.zip else '',
+                'Webseite': customer.website if customer.website else '',
+                'UID-Nummer': customer.vat if customer.vat else '',
+                'Land': customer.state_id.code if customer.state_id else '',
+            })
+            # Write row for payable account
+            writer.writerow({
+                'Konto-Nr': customer.property_account_payable_id.code if customer.property_account_payable_id else '',
+                'Name': customer.name if customer.name else '',
+                'E-Mail': customer.email if customer.email else '',
+                'Phone': customer.phone if customer.phone else '',
+                'Ort': customer.city if customer.city else '',
+                'Straße': customer.street if customer.street else '',
+                'PLZ': customer.zip if customer.zip else '',
+                'Webseite': customer.website if customer.website else '',
+                'UID-Nummer': customer.vat if customer.vat else '',
+                'Land': customer.state_id.code if customer.state_id else '',
+            })
 
-        return True
+        return customerBuffer.getvalue()
 
     def export_buchungszeilen(self):
-        print("==============> Generating csv Files for BMD export")
         gkonto = ""
 
         # date formatter from yyyy-mm-dd to dd.mm.yyyy
@@ -162,30 +159,14 @@ class AccountBmdExport(models.TransientModel):
         result_data = []
         for line in journal_items:
             belegdatum = line.date
-            if self.period_date_from > belegdatum or belegdatum > self.period_date_to:
-                continue
+            '''if self.period_date_from > belegdatum or belegdatum > self.period_date_to:
+                continue'''
             belegdatum = date_formatter(belegdatum)
-            if line.account_id.code == False:
-                 continue
-            else:
-                konto = line.account_id.code[:10]
-            if line.tax_ids.amount == False:
-                prozent = 0
-            else:
-                prozent = round(line.tax_ids.amount,3)
-
-            if line.price_total == False or line.price_subtotal == False:
-                steuer = 0
-            else:
-                steuer = round((line.price_total - line.price_subtotal),2)
-            if line.move_id.name == False:
-                belegnr = ""
-            else:
-                belegnr = line.move_id.name[:20]
-            if line.name == False:
-                text = ""
-            else:
-                text = line.name[:255]
+            konto = line.account_id.code
+            prozent = line.tax_ids.amount
+            steuer = line.price_total - line.price_subtotal
+            belegnr = line.move_id.name
+            text = line.name
             if steuer != 0 and line.tax_ids.name != False:
                 steuercode_before_cut = line.tax_ids.name
                 # Test String
@@ -194,9 +175,9 @@ class AccountBmdExport(models.TransientModel):
                 if re.search(pattern, steuercode_before_cut):
                     steuercode = int(steuercode_before_cut[-3:])
                 else:
-                    steuercode = "002" #Default
+                    steuercode = "002"
             else:
-                steuercode = "002" #Default
+                steuercode = "002"
 
             if line.debit > 0:
                 buchcode = 1
@@ -207,12 +188,10 @@ class AccountBmdExport(models.TransientModel):
 
             buchsymbol = buchsymbol_mapping.get(line.journal_id.type, '')
 
-
             if habenBuchung:
-                betrag = round(-line.credit,2)  # Haben Buchungen müssen negativ sein
+                betrag = -line.credit  # Haben Buchungen müssen negativ sein
             else:
-                betrag = round(line.debit,2)
-
+                betrag = line.debit
 
             if buchsymbol == 'ER':
                 gkonto = line.partner_id.property_account_payable_id.code
@@ -258,15 +237,12 @@ class AccountBmdExport(models.TransientModel):
                     result_data.remove(check_data)
 
 
-        save_path = self.path + '/Buchungszeilen.csv'
-        directory = os.path.dirname(save_path)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
 
-        with open(save_path, 'w', newline='', encoding='utf-8') as csvfile:
+            csvBuffer = io.StringIO()
+            writer = csv.writer(csvBuffer, delimiter=';')
             fieldnames = ['satzart', 'konto', 'gKonto', 'belegnr', 'belegdatum', 'steuercode', 'buchcode', 'betrag',
-                          'prozent', 'steuer', 'text', 'buchsymbol']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=';')
+                          'prozent', 'steuer', 'text', 'buchsymbol', 'buchungszeile']
+            writer = csv.DictWriter(csvBuffer, fieldnames=fieldnames, delimiter=';')
 
             writer.writeheader()
             for row in result_data:
@@ -275,12 +251,28 @@ class AccountBmdExport(models.TransientModel):
                 del cleaned_row['buchungszeile']
                 writer.writerow(cleaned_row)
 
-        print("==============> Done")
+        return csvBuffer.getvalue()
 
 
     def execute(self):
-        self.selectPath()
-        self.export_account()
-        self.export_customers()
-        self.export_buchungszeilen()
-        return True
+        action = {
+            'type': 'ir.actions.act_url',
+            'url': '/download',
+            'target': 'self',
+        }
+        return action
+
+
+    def combineToZip(self):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            accountContent = self.export_account()
+            zip_file.writestr(f'Sachkonten.csv', accountContent)
+            customerContent = self.export_customers()
+            zip_file.writestr(f'Personenkonten.csv', customerContent)
+            entryContent = self.export_buchungszeilen()
+            zip_file.writestr(f'Buchungszeilen.csv', entryContent)
+
+        zip_buffer.seek(0)
+
+        return zip_buffer
