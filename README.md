@@ -1,1 +1,0 @@
-# BMD-Export for Odoo
