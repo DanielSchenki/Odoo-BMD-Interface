@@ -12,6 +12,7 @@
     'sequence': '1',
     'depends': ['base','account'],
     'data': [
-        'wizard/bmd_export.xml'
+        'wizard/bmd_export.xml',
+        'security/ir.model.access.csv'
     ]
 }
