@@ -1,7 +1,6 @@
+import base64
 import csv
 import re
-import datetime
-import os
 import io
 import zipfile
 
@@ -141,7 +140,7 @@ class AccountBmdExport(models.TransientModel):
 
         return customerBuffer.getvalue()
 
-    def export_buchungszeilen(self):
+    def get_buchungszeilen(self):
         gkonto = ""
 
         # date formatter from yyyy-mm-dd to dd.mm.yyyy
@@ -210,6 +209,8 @@ class AccountBmdExport(models.TransientModel):
 
             buchungszeile = line.move_id
 
+            move_id = line.move_id.id
+
             # TODO: Add the correct values for the following fields
             satzart = 0
 
@@ -227,6 +228,8 @@ class AccountBmdExport(models.TransientModel):
                 'text': text,
                 'buchsymbol': buchsymbol,
                 'buchungszeile': buchungszeile,
+                'move_id': move_id,
+                'dokument': ''
             })
 
         # Remove tax lines and haben buchung
@@ -236,20 +239,45 @@ class AccountBmdExport(models.TransientModel):
                 if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR') and data['buchungszeile'] == check_data['buchungszeile'] and data['prozent'] and not check_data['prozent']:
                     result_data.remove(check_data)
 
+        return result_data
 
+    def export_documents(self):
+        attachments = self.env['ir.attachment'].search([])
+        return_data = []
+        unique_move_ids = set()
 
-            csvBuffer = io.StringIO()
-            writer = csv.writer(csvBuffer, delimiter=';')
-            fieldnames = ['satzart', 'konto', 'gKonto', 'belegnr', 'belegdatum', 'steuercode', 'buchcode', 'betrag',
-                          'prozent', 'steuer', 'text', 'buchsymbol', 'buchungszeile']
-            writer = csv.DictWriter(csvBuffer, fieldnames=fieldnames, delimiter=';')
+        for att in attachments:
+            if att.res_model == 'account.move':
+                for data in self.get_buchungszeilen():
+                    if data['move_id'] == att.res_id:
+                        if data['move_id'] not in unique_move_ids:
+                            return_data.append(att)
+                            unique_move_ids.add(data['move_id'])
 
-            writer.writeheader()
-            for row in result_data:
-                cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
-                               row.items()}
-                del cleaned_row['buchungszeile']
-                writer.writerow(cleaned_row)
+        return return_data
+
+    def add_documents_to_booking_lines(self):
+        attachments = self.export_documents()
+        booking_lines = self.get_buchungszeilen()
+        for att in attachments:
+            for line in booking_lines:
+                if line['move_id'] == att.res_id:
+                    line['dokument'] = '/export/' + att.name
+
+        booking_lines = [{key: value for key, value in line.items() if key not in ['buchungszeile', 'move_id']} for line in booking_lines]
+        return booking_lines
+
+    def export_buchungszeilen(self):
+        csvBuffer = io.StringIO()
+        fieldnames = ['satzart', 'konto', 'gKonto', 'belegnr', 'belegdatum', 'steuercode', 'buchcode', 'betrag',
+                      'prozent', 'steuer', 'text', 'buchsymbol', 'dokument']
+        writer = csv.DictWriter(csvBuffer, fieldnames=fieldnames, delimiter=';')
+
+        writer.writeheader()
+        for row in self.add_documents_to_booking_lines():
+            cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
+                           row.items()}
+            writer.writerow(cleaned_row)
 
         return csvBuffer.getvalue()
 
@@ -272,7 +300,8 @@ class AccountBmdExport(models.TransientModel):
             zip_file.writestr(f'Personenkonten.csv', customerContent)
             entryContent = self.export_buchungszeilen()
             zip_file.writestr(f'Buchungszeilen.csv', entryContent)
-
+            for att in self.export_documents():
+                zip_file.writestr(att.name, base64.b64decode(att.datas))
         zip_buffer.seek(0)
 
         return zip_buffer
