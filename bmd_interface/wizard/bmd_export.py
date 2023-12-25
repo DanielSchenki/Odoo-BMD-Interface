@@ -263,6 +263,7 @@ class AccountBmdExport(models.TransientModel):
             for line in booking_lines:
                 if line['move_id'] == att.res_id:
                     line['dokument'] = '/export/' + att.name
+                    break
 
         booking_lines = [{key: value for key, value in line.items() if key not in ['buchungszeile', 'move_id']} for line in booking_lines]
         return booking_lines
