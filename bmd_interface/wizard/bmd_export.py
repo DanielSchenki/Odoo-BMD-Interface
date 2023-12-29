@@ -13,11 +13,14 @@ class CsvDownloadController(http.Controller):
 
         zipContent = request.env['account.bmd'].combineToZip()
 
+        date_form = request.env['account.bmd'].search([])[-1]
+        formated_date_from = date_form.period_date_from.strftime('%y%m%d')
+        formated_date_to = date_form.period_date_to.strftime('%y%m%d')
         # Return the ZIP file
         response = http.request.make_response(zipContent.getvalue(),
              headers=[
                  ('Content-Type', 'application/zip'),
-                 ('Content-Disposition', 'attachment; filename="export.zip"')
+                 ('Content-Disposition', 'attachment; filename="BMD_Export_Firma_' + formated_date_from + '_' + formated_date_to + '.zip"')
              ])
         return response
 
@@ -155,11 +158,14 @@ class AccountBmdExport(models.TransientModel):
             'bank': 'BK'
         }
         journal_items = self.env['account.move.line'].search([])
+        date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
         for line in journal_items:
+            #TODO check if mandant is correct
+
             belegdatum = line.date
-            '''if self.period_date_from > belegdatum or belegdatum > self.period_date_to:
-                continue'''
+            if date_form.period_date_from > belegdatum or belegdatum > date_form.period_date_to:
+                continue
             belegdatum = date_formatter(belegdatum)
             konto = line.account_id.code
             prozent = line.tax_ids.amount
@@ -294,13 +300,17 @@ class AccountBmdExport(models.TransientModel):
 
     def combineToZip(self):
         zip_buffer = io.BytesIO()
+        date_form = self.env['account.bmd'].search([])[-1]
+        formated_date_from = date_form.period_date_from.strftime('%y%m%d')
+        formated_date_to = date_form.period_date_to.strftime('%y%m%d')
+
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             accountContent = self.export_account()
-            zip_file.writestr(f'Sachkonten.csv', accountContent)
+            zip_file.writestr(f'Sachkonten_Firma_' + formated_date_from + '_' + formated_date_to + '.csv', accountContent)
             customerContent = self.export_customers()
-            zip_file.writestr(f'Personenkonten.csv', customerContent)
+            zip_file.writestr(f'Personenkonten_Firma_' + formated_date_from + '_' + formated_date_to + '.csv', customerContent)
             entryContent = self.export_buchungszeilen()
-            zip_file.writestr(f'Buchungszeilen.csv', entryContent)
+            zip_file.writestr(f'Buchungszeilen_Firma_' + formated_date_from + '_' + formated_date_to + '.csv', entryContent)
             for att in self.export_documents():
                 zip_file.writestr(att.name, base64.b64decode(att.datas))
         zip_buffer.seek(0)
