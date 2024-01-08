@@ -153,7 +153,7 @@ class AccountBmdExport(models.TransientModel):
         result_data = []
         for line in journal_items:
 
-            if line.company_id.id == date_form.company.id:
+            if line.company_id.id != date_form.company.id:
                 continue
 
             belegdatum = line.date
