@@ -7,23 +7,24 @@ import zipfile
 from odoo import models, fields, api, http
 from odoo.http import request
 
+
 class CsvDownloadController(http.Controller):
     @http.route('/download', type='http', auth="user")
     def download_csv(self):
-
         zipContent = request.env['account.bmd'].combineToZip()
 
         date_form = request.env['account.bmd'].search([])[-1]
         formated_date_from = date_form.period_date_from.strftime('%y%m%d')
         formated_date_to = date_form.period_date_to.strftime('%y%m%d')
+        formated_company = date_form.company.name.replace(' ', '_')
         # Return the ZIP file
         response = http.request.make_response(zipContent.getvalue(),
-             headers=[
-                 ('Content-Type', 'application/zip'),
-                 ('Content-Disposition', 'attachment; filename="BMD_Export_Firma_' + formated_date_from + '_' + formated_date_to + '.zip"')
-             ])
+                                              headers=[
+                                                  ('Content-Type', 'application/zip'),
+                                                  ('Content-Disposition',
+                                                   'attachment; filename="BMD_Export_' + formated_company  + '_' + formated_date_from + '_' + formated_date_to + '.zip"')
+                                              ])
         return response
-
 
 
 class AccountBmdExport(models.TransientModel):
@@ -32,9 +33,9 @@ class AccountBmdExport(models.TransientModel):
 
     period_date_from = fields.Date(string="Von:", required=True)
     period_date_to = fields.Date(string="Bis:", required=True)
+    company = fields.Many2one('res.company', string="Mandant:", required=True)
 
     path = fields.Char(string="Pfad:", required=False)
-
 
     @api.model
     def export_account(self):
@@ -76,20 +77,10 @@ class AccountBmdExport(models.TransientModel):
                         'Kontoart': kontoart
                     })
 
-        # if len(accounts) != len(result_data):
-        #     raise Warning('Steuerklassen sind nicht für alle Sachkonten gepflegt')
-        #
-
-        # Create a Tkinter window
-        #window = tk.Tk()
-
-
-
-
         # Write the data to the CSV file
-        accountBuffer = io.StringIO()
+        account_buffer = io.StringIO()
         fieldnames = ['Konto-Nr', 'Bezeichnung', 'Ustcode', 'USTPz', 'Kontoart']
-        writer = csv.DictWriter(accountBuffer, fieldnames=fieldnames, delimiter=';')
+        writer = csv.DictWriter(account_buffer, fieldnames=fieldnames, delimiter=';')
 
         writer.writeheader()
         for row in result_data:
@@ -97,9 +88,9 @@ class AccountBmdExport(models.TransientModel):
                            row.items()}
             writer.writerow(cleaned_row)
 
-        #window.destroy()
+        # window.destroy()
 
-        return accountBuffer.getvalue()
+        return account_buffer.getvalue()
 
     @api.model
     def export_customers(self):
@@ -161,11 +152,14 @@ class AccountBmdExport(models.TransientModel):
         date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
         for line in journal_items:
-            #TODO check if mandant is correct
+
+            if line.company_id.id == date_form.company.id:
+                continue
 
             belegdatum = line.date
             if date_form.period_date_from > belegdatum or belegdatum > date_form.period_date_to:
                 continue
+
             belegdatum = date_formatter(belegdatum)
             konto = line.account_id.code
             prozent = line.tax_ids.amount
@@ -207,7 +201,7 @@ class AccountBmdExport(models.TransientModel):
                     if invoice_line.credit > 0:
                         gkonto = invoice_line.account_id.code
 
-            #switch Soll Haben bei Ausgangsrechnungen
+            # switch Soll Haben bei Ausgangsrechnungen
             if buchsymbol == 'AR':
                 temp_gkonto = gkonto
                 gkonto = konto
@@ -242,7 +236,8 @@ class AccountBmdExport(models.TransientModel):
 
         for data in result_data:
             for check_data in result_data:
-                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR') and data['buchungszeile'] == check_data['buchungszeile'] and data['prozent'] and not check_data['prozent']:
+                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR') and data['buchungszeile'] == check_data[
+                    'buchungszeile'] and data['prozent'] and not check_data['prozent']:
                     result_data.remove(check_data)
 
         return result_data
@@ -271,7 +266,8 @@ class AccountBmdExport(models.TransientModel):
                     line['dokument'] = '/export/' + att.name
                     break
 
-        booking_lines = [{key: value for key, value in line.items() if key not in ['buchungszeile', 'move_id']} for line in booking_lines]
+        booking_lines = [{key: value for key, value in line.items() if key not in ['buchungszeile', 'move_id']} for line
+                         in booking_lines]
         return booking_lines
 
     def export_buchungszeilen(self):
@@ -288,7 +284,6 @@ class AccountBmdExport(models.TransientModel):
 
         return csvBuffer.getvalue()
 
-
     def execute(self):
         action = {
             'type': 'ir.actions.act_url',
@@ -297,20 +292,23 @@ class AccountBmdExport(models.TransientModel):
         }
         return action
 
-
     def combineToZip(self):
         zip_buffer = io.BytesIO()
         date_form = self.env['account.bmd'].search([])[-1]
         formated_date_from = date_form.period_date_from.strftime('%y%m%d')
         formated_date_to = date_form.period_date_to.strftime('%y%m%d')
+        formated_company = date_form.company.name.replace(' ', '_')
 
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             accountContent = self.export_account()
-            zip_file.writestr(f'Sachkonten_Firma_' + formated_date_from + '_' + formated_date_to + '.csv', accountContent)
+            zip_file.writestr(f'Sachkonten_' + formated_company + '_' + formated_date_from + '_' + formated_date_to + '.csv',
+                              accountContent)
             customerContent = self.export_customers()
-            zip_file.writestr(f'Personenkonten_Firma_' + formated_date_from + '_' + formated_date_to + '.csv', customerContent)
+            zip_file.writestr(f'Personenkonten_' + formated_company + '_' + formated_date_from + '_' + formated_date_to + '.csv',
+                              customerContent)
             entryContent = self.export_buchungszeilen()
-            zip_file.writestr(f'Buchungszeilen_Firma_' + formated_date_from + '_' + formated_date_to + '.csv', entryContent)
+            zip_file.writestr(f'Buchungszeilen_' + formated_company + '_' + formated_date_from + '_' + formated_date_to + '.csv',
+                              entryContent)
             for att in self.export_documents():
                 zip_file.writestr(att.name, base64.b64decode(att.datas))
         zip_buffer.seek(0)

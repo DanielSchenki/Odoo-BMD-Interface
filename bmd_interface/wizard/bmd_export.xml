@@ -7,6 +7,7 @@
                 <group>
                     <field name="period_date_from"/>
                     <field name="period_date_to"/>
+                    <field name="company"/>
                 </group>
                 <footer>
                     <button string="Export" name="execute" type="object" class="btn-primary"/>
