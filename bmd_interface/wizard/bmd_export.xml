@@ -7,7 +7,7 @@
                 <group>
                     <field name="period_date_from"/>
                     <field name="period_date_to"/>
-                    <field name="company"/>
+                    <field name="company" options="{'no_quick_create':True,'no_create_edit':True,'no_open': True,}"/>
                 </group>
                 <footer>
                     <button string="Export" name="execute" type="object" class="btn-primary"/>
