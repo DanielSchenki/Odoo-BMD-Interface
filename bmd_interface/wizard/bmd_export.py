@@ -44,9 +44,12 @@ class AccountBmdExport(models.TransientModel):
     @api.model
     def export_accounts(self):
         accounts = self.env['account.account'].search([])
+        date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
 
         for acc in accounts:
+            if acc.company_id.id != date_form.company.id:
+                continue
             kontoart_mapping = {'asset': 1, 'equity': 2, 'liability': 2, 'expense': 3, 'income': 4}
             kontoart = kontoart_mapping.get(acc.internal_group, '')
             if not acc.tax_ids:
@@ -84,6 +87,7 @@ class AccountBmdExport(models.TransientModel):
     @api.model
     def export_customers(self):
         customers = self.env['res.partner'].search([])
+        date_form = self.env['account.bmd'].search([])[-1]
         # Write to the CSV file
         customer_buffer = io.StringIO()
         fieldnames = ['Konto-Nr', 'Name', 'Straße', 'PLZ', 'Ort', 'Land', 'UID-Nummer', 'E-Mail', 'Webseite', 'Phone',
@@ -91,6 +95,8 @@ class AccountBmdExport(models.TransientModel):
         writer = csv.DictWriter(customer_buffer, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
         for customer in customers:
+            if customer.company_id.id != date_form.company.id:
+                continue
             # Write row for receivable account
             writer.writerow({
                 'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
