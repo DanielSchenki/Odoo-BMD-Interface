@@ -124,6 +124,10 @@ class AccountBmdExport(models.TransientModel):
         journal_items = self.env['account.move.line'].search([])
         date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
+        docs = []
+
+        journal_items = sorted(journal_items, key=lambda x: x.move_id.id)
+
         for line in journal_items:
 
             if line.company_id.id != date_form.company.id:
@@ -185,21 +189,37 @@ class AccountBmdExport(models.TransientModel):
 
             satzart = 0
 
+            dokument = ''
+
+            additional_documents = []
+
+            attachments = self.env['ir.attachment'].search([])
+            for att in attachments:
+                if move_id == att.res_id and dokument == '' and att.id not in docs:
+                    dokument = att.name
+                    docs.append(att.id)
+                elif move_id == att.res_id and att.id not in docs:
+                    additional_documents.append({'document': att.name})
+                    docs.append(att.id)
+
             result_data.append(
                 {'satzart': satzart, 'konto': konto, 'gKonto': gkonto, 'belegnr': belegnr, 'belegdatum': belegdatum,
                  'steuercode': steuercode, 'buchcode': buchcode, 'betrag': betrag, 'prozent': prozent,
                  'steuer': steuer, 'text': text, 'buchsymbol': buchsymbol, 'buchungszeile': buchungszeile,
-                 'move_id': move_id, 'dokument': ''})
+                 'move_id': move_id, 'dokument': dokument})
+
+            if additional_documents:
+                for doc in additional_documents:
+                    result_data.append({
+                        'satzart': '5', 'konto': '', 'gKonto': '', 'belegnr': '', 'belegdatum': '', 'steuercode': '',
+                        'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'text': '', 'buchsymbol': '',
+                        'buchungszeile': '', 'move_id': '', 'dokument': doc['document']})
 
         # Remove tax lines and haben buchung
         for data in result_data:
             for check_data in result_data:
-                if (
-                        (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR')
-                        and data['buchungszeile'] == check_data['buchungszeile']
-                        and data['prozent']
-                        and not check_data['prozent']
-                ):
+                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR') and data['buchungszeile'] == check_data[
+                    'buchungszeile'] and data['prozent'] and not check_data['prozent']:
                     result_data.remove(check_data)
 
         return result_data
@@ -208,31 +228,16 @@ class AccountBmdExport(models.TransientModel):
     def export_attachments(self):
         attachments = self.env['ir.attachment'].search([])
         return_data = []
-        unique_move_ids = set()
+        docs = []
 
         for att in attachments:
             if att.res_model == 'account.move':
                 for data in self.get_account_movements():
-                    if data['move_id'] == att.res_id:
-                        if data['move_id'] not in unique_move_ids:
-                            return_data.append(att)
-                            unique_move_ids.add(data['move_id'])
+                    if data['move_id'] == att.res_id and att.id not in docs:
+                        return_data.append(att)
+                        docs.append(att.id)
 
         return return_data
-
-    # Adds the documents to the booking lines
-    def add_documents_to_booking_lines(self):
-        attachments = self.export_attachments()
-        account_movements = self.get_account_movements()
-        for att in attachments:
-            for line in account_movements:
-                if line['move_id'] == att.res_id:
-                    line['dokument'] = att.name
-                    break
-
-        account_movements = [{key: value for key, value in line.items() if key not in ['buchungszeile', 'move_id']} for
-                             line in account_movements]
-        return account_movements
 
     # Exports the booking lines
     def export_account_movements(self):
@@ -242,7 +247,9 @@ class AccountBmdExport(models.TransientModel):
         writer = csv.DictWriter(csvBuffer, fieldnames=fieldnames, delimiter=';')
 
         writer.writeheader()
-        for row in self.add_documents_to_booking_lines():
+        for row in self.get_account_movements():
+            del row['move_id']
+            del row['buchungszeile']
             cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
                            row.items()}
             writer.writerow(cleaned_row)
