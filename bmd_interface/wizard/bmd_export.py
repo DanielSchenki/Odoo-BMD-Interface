@@ -3,6 +3,7 @@ import csv
 import io
 import re
 import zipfile
+import math
 
 from odoo.exceptions import ValidationError
 from odoo.http import request
@@ -23,6 +24,43 @@ class CsvDownloadController(http.Controller):
             'Content-Disposition',
             f'attachment; filename="BMD_Export_{formatted_company}_{formatted_date_from}_{formatted_date_to}.zip"')])
         return response
+
+
+def commercial_round_3_digits(number):
+    # Schritt 1: Multipliziere mit 1000
+    number *= 1000
+
+    # Extrahiere die dritte und vierte Dezimalstelle
+    dritte_dezimal = int(number) % 10
+    vierte_dezimal = int(number * 10) % 10
+
+    # Schritt 2: Kaufmännisches Runden
+    if vierte_dezimal < 5:
+        number = math.floor(number)
+    elif vierte_dezimal > 5:
+        number = math.ceil(number)
+    else:
+        # Schritt 3: Runde zur nächsten geraden Zahl, wenn vierte Dezimalstelle genau 5 ist
+        if dritte_dezimal % 2 == 0:  # Gerade Zahl
+            number = math.floor(number)
+        else:  # Ungerade Zahl
+            number = math.ceil(number)
+
+    # Teile durch 1000, um das Ergebnis zu normalisieren
+    return number / 1000
+
+def testCommercialRound():
+    testzahlen = [
+        123.45674,  # Vierte Dezimalstelle < 5
+        123.45676,  # Vierte Dezimalstelle > 5
+        123.45650,  # Vierte Dezimalstelle = 5, dritte Dezimalstelle gerade
+        123.45550,  # Vierte Dezimalstelle = 5, dritte Dezimalstelle ungerade
+        100,  # Keine Dezimalstellen
+        123.45,  # Weniger als drei Dezimalstellen
+        -123.45675  # Negative Zahl
+    ]
+    ergebnisse = [commercial_round_3_digits(zahl) for zahl in testzahlen]
+    print(ergebnisse)
 
 
 class AccountBmdExport(models.TransientModel):
@@ -194,6 +232,10 @@ class AccountBmdExport(models.TransientModel):
             move_id = line.move_id.id
 
             satzart = 0
+            # Rounding
+            betrag = commercial_round_3_digits(betrag)
+            steuer = commercial_round_3_digits(steuer)
+
 
             dokument = ''
 
@@ -269,6 +311,7 @@ class AccountBmdExport(models.TransientModel):
 
     # Combines all files to one zip file
     def combine_to_zip(self):
+        #testCommercialRound()
         zip_buffer = io.BytesIO()
         date_form = self.env['account.bmd'].search([])[-1]
         formatted_date_from = date_form.period_date_from.strftime('%y%m%d')
