@@ -3,6 +3,7 @@ import csv
 import io
 import re
 import zipfile
+import math
 
 from odoo.exceptions import ValidationError
 from odoo.http import request
@@ -25,6 +26,30 @@ class CsvDownloadController(http.Controller):
         return response
 
 
+def commercial_round_3_digits(number):
+    # Schritt 1: Multipliziere mit 1000
+    number *= 1000
+
+    # Extrahiere die dritte und vierte Dezimalstelle
+    dritte_dezimal = int(number) % 10
+    vierte_dezimal = int(number * 10) % 10
+
+    # Schritt 2: Kaufmännisches Runden
+    if vierte_dezimal < 5:
+        number = math.floor(number)
+    elif vierte_dezimal > 5:
+        number = math.ceil(number)
+    else:
+        # Schritt 3: Runde zur nächsten geraden Zahl, wenn vierte Dezimalstelle genau 5 ist
+        if dritte_dezimal % 2 == 0:  # Gerade Zahl
+            number = math.floor(number)
+        else:  # Ungerade Zahl
+            number = math.ceil(number)
+
+    # Teile durch 1000, um das Ergebnis zu normalisieren
+    return number / 1000
+
+
 class AccountBmdExport(models.TransientModel):
     _name = 'account.bmd'
     _description = 'BMD Export'
@@ -44,9 +69,12 @@ class AccountBmdExport(models.TransientModel):
     @api.model
     def export_accounts(self):
         accounts = self.env['account.account'].search([])
+        date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
 
         for acc in accounts:
+            if acc.company_id.id != date_form.company.id:
+                continue
             kontoart_mapping = {'asset': 1, 'equity': 2, 'liability': 2, 'expense': 3, 'income': 4}
             kontoart = kontoart_mapping.get(acc.internal_group, '')
             if not acc.tax_ids:
@@ -84,6 +112,7 @@ class AccountBmdExport(models.TransientModel):
     @api.model
     def export_customers(self):
         customers = self.env['res.partner'].search([])
+        date_form = self.env['account.bmd'].search([])[-1]
         # Write to the CSV file
         customer_buffer = io.StringIO()
         fieldnames = ['Konto-Nr', 'Name', 'Straße', 'PLZ', 'Ort', 'Land', 'UID-Nummer', 'E-Mail', 'Webseite', 'Phone',
@@ -91,6 +120,8 @@ class AccountBmdExport(models.TransientModel):
         writer = csv.DictWriter(customer_buffer, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
         for customer in customers:
+            if customer.company_id.id != date_form.company.id:
+                continue
             # Write row for receivable account
             writer.writerow({
                 'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
@@ -124,6 +155,10 @@ class AccountBmdExport(models.TransientModel):
         journal_items = self.env['account.move.line'].search([])
         date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
+        docs = []
+
+        journal_items = sorted(journal_items, key=lambda x: x.move_id.id)
+
         for line in journal_items:
 
             if line.company_id.id != date_form.company.id:
@@ -145,9 +180,9 @@ class AccountBmdExport(models.TransientModel):
                 if re.search(pattern, steuercode_before_cut):
                     steuercode = int(steuercode_before_cut[-3:])
                 else:
-                    steuercode = "002"
+                    steuercode = "2"
             else:
-                steuercode = "002"
+                steuercode = "2"
 
             if line.debit > 0:
                 buchcode = 1
@@ -184,22 +219,42 @@ class AccountBmdExport(models.TransientModel):
             move_id = line.move_id.id
 
             satzart = 0
+            # Rounding
+            betrag = commercial_round_3_digits(betrag)
+            steuer = commercial_round_3_digits(steuer)
+
+
+            dokument = ''
+
+            additional_documents = []
+
+            attachments = self.env['ir.attachment'].search([])
+            for att in attachments:
+                if move_id == att.res_id and dokument == '' and att.id not in docs:
+                    dokument = att.name
+                    docs.append(att.id)
+                elif move_id == att.res_id and att.id not in docs:
+                    additional_documents.append({'document': att.name})
+                    docs.append(att.id)
 
             result_data.append(
                 {'satzart': satzart, 'konto': konto, 'gKonto': gkonto, 'belegnr': belegnr, 'belegdatum': belegdatum,
                  'steuercode': steuercode, 'buchcode': buchcode, 'betrag': betrag, 'prozent': prozent,
                  'steuer': steuer, 'text': text, 'buchsymbol': buchsymbol, 'buchungszeile': buchungszeile,
-                 'move_id': move_id, 'dokument': ''})
+                 'move_id': move_id, 'dokument': dokument})
+
+            if additional_documents:
+                for doc in additional_documents:
+                    result_data.append({
+                        'satzart': '5', 'konto': '', 'gKonto': '', 'belegnr': '', 'belegdatum': '', 'steuercode': '',
+                        'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'text': '', 'buchsymbol': '',
+                        'buchungszeile': '', 'move_id': '', 'dokument': doc['document']})
 
         # Remove tax lines and haben buchung
         for data in result_data:
             for check_data in result_data:
-                if (
-                        (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR')
-                        and data['buchungszeile'] == check_data['buchungszeile']
-                        and data['prozent']
-                        and not check_data['prozent']
-                ):
+                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR') and data['buchungszeile'] == check_data[
+                    'buchungszeile'] and data['prozent'] and not check_data['prozent']:
                     result_data.remove(check_data)
 
         return result_data
@@ -208,31 +263,16 @@ class AccountBmdExport(models.TransientModel):
     def export_attachments(self):
         attachments = self.env['ir.attachment'].search([])
         return_data = []
-        unique_move_ids = set()
+        docs = []
 
         for att in attachments:
             if att.res_model == 'account.move':
                 for data in self.get_account_movements():
-                    if data['move_id'] == att.res_id:
-                        if data['move_id'] not in unique_move_ids:
-                            return_data.append(att)
-                            unique_move_ids.add(data['move_id'])
+                    if data['move_id'] == att.res_id and att.id not in docs:
+                        return_data.append(att)
+                        docs.append(att.id)
 
         return return_data
-
-    # Adds the documents to the booking lines
-    def add_documents_to_booking_lines(self):
-        attachments = self.export_attachments()
-        account_movements = self.get_account_movements()
-        for att in attachments:
-            for line in account_movements:
-                if line['move_id'] == att.res_id:
-                    line['dokument'] = att.name
-                    break
-
-        account_movements = [{key: value for key, value in line.items() if key not in ['buchungszeile', 'move_id']} for
-                             line in account_movements]
-        return account_movements
 
     # Exports the booking lines
     def export_account_movements(self):
@@ -242,7 +282,9 @@ class AccountBmdExport(models.TransientModel):
         writer = csv.DictWriter(csvBuffer, fieldnames=fieldnames, delimiter=';')
 
         writer.writeheader()
-        for row in self.add_documents_to_booking_lines():
+        for row in self.get_account_movements():
+            del row['move_id']
+            del row['buchungszeile']
             cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
                            row.items()}
             writer.writerow(cleaned_row)
