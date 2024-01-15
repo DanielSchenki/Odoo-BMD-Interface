@@ -23,6 +23,7 @@
         <field name="target">new</field>
     </record>
 
+
     <menuitem id="bmd_export"
               name="BMD-Export"
               action="account_export_to_bmd_window"
