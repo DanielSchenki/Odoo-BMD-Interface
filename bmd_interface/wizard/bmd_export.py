@@ -193,9 +193,9 @@ class AccountBmdExport(models.TransientModel):
                 if re.search(pattern, steuercode_before_cut):
                     steuercode = int(steuercode_before_cut[-3:])
                 else:
-                    steuercode = "002"
+                    steuercode = "2"
             else:
-                steuercode = "002"
+                steuercode = "2"
 
             if line.debit > 0:
                 buchcode = 1
