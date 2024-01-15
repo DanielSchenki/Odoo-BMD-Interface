@@ -49,19 +49,6 @@ def commercial_round_3_digits(number):
     # Teile durch 1000, um das Ergebnis zu normalisieren
     return number / 1000
 
-def testCommercialRound():
-    testzahlen = [
-        123.45674,  # Vierte Dezimalstelle < 5
-        123.45676,  # Vierte Dezimalstelle > 5
-        123.45650,  # Vierte Dezimalstelle = 5, dritte Dezimalstelle gerade
-        123.45550,  # Vierte Dezimalstelle = 5, dritte Dezimalstelle ungerade
-        100,  # Keine Dezimalstellen
-        123.45,  # Weniger als drei Dezimalstellen
-        -123.45675  # Negative Zahl
-    ]
-    ergebnisse = [commercial_round_3_digits(zahl) for zahl in testzahlen]
-    print(ergebnisse)
-
 
 class AccountBmdExport(models.TransientModel):
     _name = 'account.bmd'
@@ -311,7 +298,6 @@ class AccountBmdExport(models.TransientModel):
 
     # Combines all files to one zip file
     def combine_to_zip(self):
-        #testCommercialRound()
         zip_buffer = io.BytesIO()
         date_form = self.env['account.bmd'].search([])[-1]
         formatted_date_from = date_form.period_date_from.strftime('%y%m%d')
