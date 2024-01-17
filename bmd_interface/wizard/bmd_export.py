@@ -98,7 +98,7 @@ class AccountBmdExport(models.TransientModel):
                         'Konto-Nr': acc.code,
                         'Bezeichnung': acc.name,
                         'Ustcode': steuercode,
-                        'USTPz': int(tax.real_amount),
+                        'USTPz': int(tax.amount),
                         'Kontoart': kontoart
                     })
 
