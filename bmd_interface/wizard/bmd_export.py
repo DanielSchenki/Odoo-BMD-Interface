@@ -52,6 +52,9 @@ def commercial_round_3_digits(number):
 def sanitize_filename(filename):
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
 
+def replace_dot_with_comma(value):
+    return str(value).replace('.',',')
+
 class AccountBmdExport(models.TransientModel):
     _name = 'account.bmd'
     _description = 'BMD Export'
@@ -248,8 +251,9 @@ class AccountBmdExport(models.TransientModel):
 
             result_data.append(
                 {'satzart': satzart, 'konto': konto, 'gKonto': gkonto, 'belegnr': belegnr, 'belegdatum': belegdatum,
-                 'steuercode': steuercode, 'buchcode': buchcode, 'betrag': betrag, 'prozent': prozent,
-                 'steuer': steuer, 'text': text, 'buchsymbol': buchsymbol, 'buchungszeile': buchungszeile,
+                 'steuercode': steuercode, 'buchcode': buchcode, 'betrag': replace_dot_with_comma(betrag),
+                 'prozent': replace_dot_with_comma(prozent),
+                 'steuer': replace_dot_with_comma(steuer), 'text': text, 'buchsymbol': buchsymbol, 'buchungszeile': buchungszeile,
                  'move_id': move_id, 'dokument': sanitize_filename(dokument)})
 
             if additional_documents:
