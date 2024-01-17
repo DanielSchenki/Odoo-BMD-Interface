@@ -71,6 +71,7 @@ class AccountBmdExport(models.TransientModel):
         accounts = self.env['account.account'].search([])
         date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
+        pattern = r"BMDSC\d{3}$"
 
         for acc in accounts:
             if acc.company_id.id != date_form.company.id:
@@ -87,11 +88,16 @@ class AccountBmdExport(models.TransientModel):
                 })
             else:
                 for tax in acc.tax_ids:
+                    if re.search(pattern, tax.name):
+                        steuercode = int(tax.name[-3:])
+                    else:
+                        steuercode = "2"
+
                     result_data.append({
                         'Konto-Nr': acc.code,
                         'Bezeichnung': acc.name,
-                        'Ustcode': tax.tax_group_id.id if tax.tax_group_id else '',
-                        'USTPz': tax.amount,
+                        'Ustcode': steuercode,
+                        'USTPz': int(tax.real_amount),
                         'Kontoart': kontoart
                     })
 
