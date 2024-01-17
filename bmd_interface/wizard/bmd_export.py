@@ -57,6 +57,7 @@ class AccountBmdExport(models.TransientModel):
     period_date_from = fields.Date(string="Von:", required=True)
     period_date_to = fields.Date(string="Bis:", required=True)
     company = fields.Many2one('res.company', string="Mandant:", required=True)
+    documents = fields.Boolean(string="Dokumente ausgeben?", default=True)
 
     # Checks if the date is valid
     @api.constrains('period_date_from', 'period_date_to')
@@ -320,8 +321,9 @@ class AccountBmdExport(models.TransientModel):
             entryContent = self.export_account_movements()
             zip_file.writestr(f'Buchungszeilen_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv',
                               entryContent)
-            for att in self.export_attachments():
-                zip_file.writestr(att.name, base64.b64decode(att.datas))
+            if date_form.documents is True:
+                for att in self.export_attachments():
+                    zip_file.writestr(att.name, base64.b64decode(att.datas))
         zip_buffer.seek(0)
 
         return zip_buffer
