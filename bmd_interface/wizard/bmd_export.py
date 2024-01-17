@@ -22,7 +22,7 @@ class CsvDownloadController(http.Controller):
         # Return the ZIP file
         response = http.request.make_response(zip_content.getvalue(), headers=[('Content-Type', 'application/zip'), (
             'Content-Disposition',
-            f'attachment; filename="BMD_Export_{formatted_company}_{formatted_date_from}_{formatted_date_to}.zip"')])
+            f'attachment; filename="BMD_Export_{sanitize_filename(formatted_company)}_{formatted_date_from}_{formatted_date_to}.zip"')])
         return response
 
 
@@ -49,6 +49,8 @@ def commercial_round_3_digits(number):
     # Teile durch 1000, um das Ergebnis zu normalisieren
     return number / 1000
 
+def sanitize_filename(filename):
+    return re.sub(r'[<>:"/\\|?*]', '_', filename)
 
 class AccountBmdExport(models.TransientModel):
     _name = 'account.bmd'
@@ -248,14 +250,14 @@ class AccountBmdExport(models.TransientModel):
                 {'satzart': satzart, 'konto': konto, 'gKonto': gkonto, 'belegnr': belegnr, 'belegdatum': belegdatum,
                  'steuercode': steuercode, 'buchcode': buchcode, 'betrag': betrag, 'prozent': prozent,
                  'steuer': steuer, 'text': text, 'buchsymbol': buchsymbol, 'buchungszeile': buchungszeile,
-                 'move_id': move_id, 'dokument': dokument})
+                 'move_id': move_id, 'dokument': sanitize_filename(dokument)})
 
             if additional_documents:
                 for doc in additional_documents:
                     result_data.append({
                         'satzart': '5', 'konto': '', 'gKonto': '', 'belegnr': '', 'belegdatum': '', 'steuercode': '',
                         'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'text': '', 'buchsymbol': '',
-                        'buchungszeile': '', 'move_id': '', 'dokument': doc['document']})
+                        'buchungszeile': '', 'move_id': '', 'dokument': sanitize_filename(doc['document'])})
 
         # Remove tax lines and haben buchung
         for data in result_data:
@@ -313,17 +315,17 @@ class AccountBmdExport(models.TransientModel):
 
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             accountContent = self.export_accounts()
-            zip_file.writestr(f'Sachkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv',
+            zip_file.writestr(sanitize_filename(f'Sachkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               accountContent)
             customerContent = self.export_customers()
-            zip_file.writestr(f'Personenkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv',
+            zip_file.writestr(sanitize_filename(f'Personenkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               customerContent)
             entryContent = self.export_account_movements()
-            zip_file.writestr(f'Buchungszeilen_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv',
+            zip_file.writestr(sanitize_filename(f'Buchungszeilen_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               entryContent)
             if date_form.documents is True:
                 for att in self.export_attachments():
-                    zip_file.writestr(att.name, base64.b64decode(att.datas))
+                    zip_file.writestr(sanitize_filename(att.name), base64.b64decode(att.datas))
         zip_buffer.seek(0)
 
         return zip_buffer
