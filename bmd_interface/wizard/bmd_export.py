@@ -4,9 +4,11 @@ import io
 import re
 import zipfile
 import math
+import time
 
 from odoo.exceptions import ValidationError
 from odoo.http import request
+from datetime import datetime
 
 from odoo import models, fields, api, http
 
@@ -55,6 +57,10 @@ def sanitize_filename(filename):
 def replace_dot_with_comma(value):
     return str(value).replace('.',',')
 
+
+
+
+
 class AccountBmdExport(models.TransientModel):
     _name = 'account.bmd'
     _description = 'BMD Export'
@@ -63,6 +69,28 @@ class AccountBmdExport(models.TransientModel):
     period_date_to = fields.Date(string="Bis:", required=True)
     company = fields.Many2one('res.company', string="Mandant:", required=True)
     documents = fields.Boolean(string="Dokumente ausgeben?", default=True)
+
+    start_time = fields.Float(string="Startzeit", default=time.time())
+    checkpointNr = fields.Integer(string="Checkpoint", default=0)
+
+
+
+
+    # Prints a checkpoint
+    @api.model
+    def checkpoint(self, text):
+        record = self.env['account.bmd'].search([], limit=1, order='id desc')
+        if not record:
+            return
+        end_time = datetime.now()
+        elapsed_time = (end_time - datetime.fromtimestamp(record.start_time)).total_seconds()
+        minutes, seconds = divmod(elapsed_time, 60)
+        seconds, milliseconds = divmod(seconds, 1)
+        print(f"CheckpointNr: {record.checkpointNr} {text}, Elapsed time: {int(minutes)} minutes, {int(seconds)} seconds and {int(milliseconds * 1000)} milliseconds")
+        record.checkpointNr += 1
+        record.write({'checkpointNr': record.checkpointNr, 'start_time': record.start_time})
+
+
 
     # Checks if the date is valid
     @api.constrains('period_date_from', 'period_date_to')
@@ -171,6 +199,7 @@ class AccountBmdExport(models.TransientModel):
 
         journal_items = sorted(journal_items, key=lambda x: x.move_id.id)
 
+        #self.checkpoint("Start journal_items loop")
         for line in journal_items:
 
             if line.company_id.id != date_form.company.id:
@@ -263,6 +292,7 @@ class AccountBmdExport(models.TransientModel):
                         'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'text': '', 'buchsymbol': '',
                         'buchungszeile': '', 'move_id': '', 'dokument': sanitize_filename(doc['document'])})
 
+        #self.checkpoint("Finished journal_items loop")
         # Remove tax lines and haben buchung
         for data in result_data:
             for check_data in result_data:
@@ -306,11 +336,19 @@ class AccountBmdExport(models.TransientModel):
 
     # Executes the export
     def execute(self):
+        #reset checkpoint logger
+        record = self.env['account.bmd'].search([], limit=1, order='id desc')
+        record.start_time = time.time()
+        record.checkpointNr = 0
+        record.write({'checkpointNr': record.checkpointNr, 'start_time': record.start_time})
+        self.checkpoint("Start export")
+
         action = {'type': 'ir.actions.act_url', 'url': '/download', 'target': 'self', }
         return action
 
     # Combines all files to one zip file
     def combine_to_zip(self):
+        self.checkpoint("Start combining to zip")
         zip_buffer = io.BytesIO()
         date_form = self.env['account.bmd'].search([])[-1]
         formatted_date_from = date_form.period_date_from.strftime('%y%m%d')
@@ -318,18 +356,26 @@ class AccountBmdExport(models.TransientModel):
         formatted_company = date_form.company.name.replace(' ', '_')
 
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            self.checkpoint("Start Sachkonten")
             accountContent = self.export_accounts()
+            self.checkpoint("Finished Sachkonten")
             zip_file.writestr(sanitize_filename(f'Sachkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               accountContent)
+            self.checkpoint("Sachkonten written to zip, start Personenkonten")
             customerContent = self.export_customers()
+            self.checkpoint("Finished Personenkonten")
             zip_file.writestr(sanitize_filename(f'Personenkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               customerContent)
+            self.checkpoint("Personenkonten written to zip, start Buchungszeilen")
             entryContent = self.export_account_movements()
+            self.checkpoint("Finished Buchungszeilen")
             zip_file.writestr(sanitize_filename(f'Buchungszeilen_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               entryContent)
+            self.checkpoint("Buchungszeilen written to zip, start Dokumente")
             if date_form.documents is True:
                 for att in self.export_attachments():
                     zip_file.writestr(sanitize_filename(att.name), base64.b64decode(att.datas))
+            self.checkpoint("Dokumente written to zip, start closing")
         zip_buffer.seek(0)
-
+        self.checkpoint("Finished combining to zip")
         return zip_buffer
