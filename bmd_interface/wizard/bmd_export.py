@@ -192,6 +192,7 @@ class AccountBmdExport(models.TransientModel):
             return date.strftime('%d.%m.%Y')
 
         buchsymbol_mapping = {'sale': 'AR', 'purchase': 'ER', 'general': 'SO', 'cash': 'KA', 'bank': 'BK'}
+        buchsymbol_mapping_AR_ER = {'out_invoice': 'AR', 'in_invoice': 'ER', 'out_refund': 'GU', 'in_refund': 'GU'}
         journal_items = self.env['account.move.line'].search([])
         date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
@@ -234,6 +235,9 @@ class AccountBmdExport(models.TransientModel):
 
             buchsymbol = buchsymbol_mapping.get(line.journal_id.type, '')
 
+            if buchsymbol == 'AR' or buchsymbol == 'ER':
+                buchsymbol = buchsymbol_mapping_AR_ER.get(line.move_id.move_type, '')
+
             if haben_buchung:
                 betrag = -line.credit  # Haben Buchungen müssen negativ sein
             else:
@@ -254,6 +258,11 @@ class AccountBmdExport(models.TransientModel):
                 temp_gkonto = gkonto
                 gkonto = konto
                 konto = temp_gkonto
+
+            if buchsymbol == 'ER':
+                buchcode = '2'
+            elif buchsymbol == 'AR':
+                buchcode = '1'
 
             buchungszeile = line.move_id
 
@@ -296,7 +305,7 @@ class AccountBmdExport(models.TransientModel):
         # Remove tax lines and haben buchung
         for data in result_data:
             for check_data in result_data:
-                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR') and data['buchungszeile'] == check_data[
+                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR' or data['buchsymbol'] == 'GU') and data['buchungszeile'] == check_data[
                     'buchungszeile'] and data['prozent'] and not check_data['prozent']:
                     result_data.remove(check_data)
 
