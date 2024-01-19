@@ -264,6 +264,9 @@ class AccountBmdExport(models.TransientModel):
             elif buchsymbol == 'AR':
                 buchcode = '1'
 
+            if buchsymbol == 'ER' or buchsymbol == 'AR' or buchsymbol == 'GU':
+                betrag = line.price_total
+
             buchungszeile = line.move_id
 
             move_id = line.move_id.id
@@ -303,13 +306,17 @@ class AccountBmdExport(models.TransientModel):
 
         #self.checkpoint("Finished journal_items loop")
         # Remove tax lines and haben buchung
+        return_data = []
+        seen_move_ids = set()
         for data in result_data:
-            for check_data in result_data:
-                if (data['buchsymbol'] == 'ER' or data['buchsymbol'] == 'AR' or data['buchsymbol'] == 'GU') and data['buchungszeile'] == check_data[
-                    'buchungszeile'] and data['prozent'] and not check_data['prozent']:
-                    result_data.remove(check_data)
+            if data['move_id'] not in seen_move_ids and (
+                    data['buchsymbol'] in ('ER', 'AR', 'GU') or data['prozent'] == '0,0' or data['prozent'] == ''):
+                return_data.append(data)
+                seen_move_ids.add(data['move_id'])
+            elif data['move_id'] == '':
+                return_data.append(data)
 
-        return result_data
+        return return_data
 
     # Exports the documents
     def export_attachments(self):
