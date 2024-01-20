@@ -320,16 +320,15 @@ class AccountBmdExport(models.TransientModel):
 
     # Exports the documents
     def export_attachments(self):
-        attachments = self.env['ir.attachment'].search([])
+        attachments = self.env['ir.attachment'].search([('res_model', '=', 'account.move')])
         return_data = []
         docs = []
 
         for att in attachments:
-            if att.res_model == 'account.move':
-                for data in self.get_account_movements():
-                    if data['move_id'] == att.res_id and att.id not in docs:
-                        return_data.append(att)
-                        docs.append(att.id)
+            for data in self.get_account_movements():
+                if data['move_id'] == att.res_id and att.id not in docs:
+                    return_data.append(att)
+                    docs.append(att.id)
 
         return return_data
 
