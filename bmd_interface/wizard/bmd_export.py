@@ -192,7 +192,7 @@ class AccountBmdExport(models.TransientModel):
             return date.strftime('%d.%m.%Y')
 
         buchsymbol_mapping = {'sale': 'AR', 'purchase': 'ER', 'general': 'SO', 'cash': 'KA', 'bank': 'BK'}
-        buchsymbol_mapping_AR_ER = {'out_invoice': 'AR', 'in_invoice': 'ER', 'out_refund': 'GU', 'in_refund': 'GU'}
+        buchsymbol_mapping_AR_ER = {'out_invoice': 'AR', 'in_invoice': 'ER', 'out_refund': 'GU', 'in_refund': 'EG'}
         journal_items = self.env['account.move.line'].search([])
         date_form = self.env['account.bmd'].search([])[-1]
         result_data = []
@@ -210,12 +210,14 @@ class AccountBmdExport(models.TransientModel):
             if date_form.period_date_from > belegdatum or belegdatum > date_form.period_date_to:
                 continue
 
+            #general fields
             belegdatum = date_formatter(belegdatum)
             konto = line.account_id.code
             prozent = line.tax_ids.amount
             steuer = line.price_total - line.price_subtotal
             belegnr = line.move_id.name
             text = line.name
+            buchsymbol = buchsymbol_mapping.get(line.journal_id.type, '')
             if (steuer != 0) and (line.tax_ids.name is not False):
                 steuercode_before_cut = line.tax_ids.name
                 pattern = r"BMDSC\d{3}$"
@@ -233,52 +235,21 @@ class AccountBmdExport(models.TransientModel):
                 buchcode = 2
                 haben_buchung = True
 
-            buchsymbol = buchsymbol_mapping.get(line.journal_id.type, '')
-
-            if buchsymbol == 'AR' or buchsymbol == 'ER':
-                buchsymbol = buchsymbol_mapping_AR_ER.get(line.move_id.move_type, '')
-
             if haben_buchung:
                 betrag = -line.credit  # Haben Buchungen müssen negativ sein
             else:
                 betrag = line.debit
 
-            if buchsymbol == 'ER':
-                gkonto = line.partner_id.property_account_payable_id.code
-            elif buchsymbol == 'AR':
-                gkonto = line.partner_id.property_account_receivable_id.code
-            else:
-                # runs through all invoice lines to find the right "Gegenkonto"
-                for invoice_line in line.move_id.invoice_line_ids:
-                    if invoice_line.credit > 0:
-                        gkonto = invoice_line.account_id.code
-
-            # switch Soll Haben bei Ausgangsrechnungen
-            if buchsymbol == 'AR':
-                temp_gkonto = gkonto
-                gkonto = konto
-                konto = temp_gkonto
-
-            if buchsymbol == 'ER':
-                buchcode = '2'
-            elif buchsymbol == 'AR':
-                buchcode = '1'
-
-            if buchsymbol == 'ER' or buchsymbol == 'AR' or buchsymbol == 'GU':
-                betrag = line.price_total
-
-            buchungszeile = line.move_id
-
-            move_id = line.move_id.id
+            for invoice_line in line.move_id.invoice_line_ids:
+                if invoice_line.credit > 0:
+                    gkonto = invoice_line.account_id.code
 
             satzart = 0
             # Rounding
             betrag = commercial_round_3_digits(betrag)
             steuer = commercial_round_3_digits(steuer)
-
-
             dokument = ''
-
+            move_id = line.move_id.id
             additional_documents = []
 
             attachments = self.env['ir.attachment'].search([])
@@ -290,11 +261,53 @@ class AccountBmdExport(models.TransientModel):
                     additional_documents.append({'document': att.name})
                     docs.append(att.id)
 
+            #special logic for ARs
+            if buchsymbol == 'AR':
+                buchsymbol = buchsymbol_mapping_AR_ER.get(line.move_id.move_type, '')
+                if line.display_type != 'product':
+                    continue
+                gkonto = line.partner_id.property_account_receivable_id.code
+                temp_gkonto = gkonto
+                gkonto = konto
+                konto = temp_gkonto
+                buchcode = '1'
+                betrag = line.price_total
+                if buchsymbol == 'GU':
+                    betrag = -betrag
+                else:
+                    steuer = -steuer
+
+            #special logic for ERs
+            if buchsymbol == 'ER':
+                buchsymbol = buchsymbol_mapping_AR_ER.get(line.move_id.move_type, '')
+                if line.display_type != 'product':
+                    continue
+                gkonto = line.partner_id.property_account_payable_id.code
+                temp_gkonto = gkonto
+                gkonto = konto
+                konto = temp_gkonto
+                buchcode = '2'
+                betrag = line.price_total
+                if buchsymbol == 'EG':
+                    steuer = -steuer
+                else:
+                    betrag = -betrag
+
+            #special logic for BKs and KAs
+            if buchsymbol == 'BK' or buchsymbol == 'KA':
+                if line.matching_number == False:
+                    continue
+                else:
+                    konto = line.account_id.code
+                    gkonto = line.payment_id.outstanding_account_id.code
+
+
+
             result_data.append(
                 {'satzart': satzart, 'konto': konto, 'gKonto': gkonto, 'belegnr': belegnr, 'belegdatum': belegdatum,
                  'steuercode': steuercode, 'buchcode': buchcode, 'betrag': replace_dot_with_comma(betrag),
                  'prozent': replace_dot_with_comma(prozent),
-                 'steuer': replace_dot_with_comma(steuer), 'text': text, 'buchsymbol': buchsymbol, 'buchungszeile': buchungszeile,
+                 'steuer': replace_dot_with_comma(steuer), 'text': text, 'buchsymbol': buchsymbol,
                  'move_id': move_id, 'dokument': sanitize_filename(dokument)})
 
             if additional_documents:
@@ -302,20 +315,21 @@ class AccountBmdExport(models.TransientModel):
                     result_data.append({
                         'satzart': '5', 'konto': '', 'gKonto': '', 'belegnr': '', 'belegdatum': '', 'steuercode': '',
                         'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'text': '', 'buchsymbol': '',
-                        'buchungszeile': '', 'move_id': '', 'dokument': sanitize_filename(doc['document'])})
+                        'move_id': '', 'dokument': sanitize_filename(doc['document'])})
 
         #self.checkpoint("Finished journal_items loop")
         # Remove tax lines and haben buchung
-        return_data = []
-        seen_move_ids = set()
-        for data in result_data:
-            if data['move_id'] not in seen_move_ids and (
-                    data['buchsymbol'] in ('ER', 'AR', 'GU') or data['prozent'] == '0,0' or data['prozent'] == ''):
-                return_data.append(data)
-                seen_move_ids.add(data['move_id'])
-            elif data['move_id'] == '':
-                return_data.append(data)
+        #return_data = []
+        #seen_move_ids = set()
+        #for data in result_data:
+        #    if data['move_id'] not in seen_move_ids and (
+        #            data['buchsymbol'] in ('ER', 'AR', 'GU')):
+        #        return_data.append(data)
+        #        seen_move_ids.add(data['move_id'])
+        #    elif data['move_id'] == '':
+        #        return_data.append(data)
 
+        return_data = result_data
         return return_data
 
     # Exports the documents
@@ -343,7 +357,6 @@ class AccountBmdExport(models.TransientModel):
         writer.writeheader()
         for row in self.get_account_movements():
             del row['move_id']
-            del row['buchungszeile']
             cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
                            row.items()}
             writer.writerow(cleaned_row)
