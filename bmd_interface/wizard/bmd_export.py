@@ -334,18 +334,15 @@ class AccountBmdExport(models.TransientModel):
 
     # Exports the documents
     def export_attachments(self):
-        attachments = self.env['ir.attachment'].search([])
-        return_data = []
-        docs = []
-
-        for att in attachments:
-            if att.res_model == 'account.move':
-                for data in self.get_account_movements():
-                    if data['move_id'] == att.res_id and att.id not in docs:
-                        return_data.append(att)
-                        docs.append(att.id)
-
-        return return_data
+        date_form = self.env['account.bmd'].search([])[-1]
+        journal_items = self.env['account.move.line'].search([
+            ('company_id.id', '=', date_form.company.id),
+            ('date', '>=', date_form.period_date_from),
+            ('date', '<=', date_form.period_date_to)
+        ])
+        move_ids = [item.move_id.id for item in journal_items]
+        attachments = self.env['ir.attachment'].search([('res_id', 'in', move_ids), ('res_model', '=', 'account.move')])
+        return attachments
 
     # Exports the booking lines
     def export_account_movements(self):
