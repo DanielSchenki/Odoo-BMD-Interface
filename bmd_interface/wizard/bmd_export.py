@@ -381,18 +381,37 @@ class AccountBmdExport(models.TransientModel):
         formatted_date_to = date_form.period_date_to.strftime('%y%m%d')
         formatted_company = date_form.company.name.replace(' ', '_')
 
+        print("Company: " + formatted_company)
+        print("Date from: " + formatted_date_from)
+        print("Date to: " + formatted_date_to)
+
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             self.checkpoint("Start Sachkonten")
             accountContent = self.export_accounts()
+            if accountContent is None:
+                accountContent = ""
+                print("Keine Sachkonten vorhanden")
+            else:
+                print("Sachkonten: " + accountContent)
             self.checkpoint("Finished Sachkonten")
             zip_file.writestr(sanitize_filename(f'Sachkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               accountContent)
             self.checkpoint("Sachkonten written to zip, start Personenkonten")
+
+
             customerContent = self.export_customers()
+            if customerContent is None:
+                customerContent = ""
+                print("Keine Personenkonten vorhanden")
+            else:
+                print("Personenkonten: " + customerContent)
             self.checkpoint("Finished Personenkonten")
+
             zip_file.writestr(sanitize_filename(f'Personenkonten_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
                               customerContent)
             self.checkpoint("Personenkonten written to zip, start Buchungszeilen")
+
+            
             entryContent = self.export_account_movements()
             self.checkpoint("Finished Buchungszeilen")
             zip_file.writestr(sanitize_filename(f'Buchungszeilen_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
