@@ -52,7 +52,14 @@ def commercial_round_3_digits(number):
     return number / 1000
 
 def sanitize_filename(filename):
-    return re.sub(r'[<>:"/\\|?*]', '_', filename)
+    if '.' in filename:
+        name, ext = filename.rsplit('.', 1)
+        name = name.replace('.', '_')
+        sanitized_name = f"{name}.{ext}"
+    else:
+        # Handle filenames without an extension
+        sanitized_name = filename.replace('.', '_')
+    return re.sub(r'[<>:" /\\|?*]', '_', sanitized_name)
 
 def replace_dot_with_comma(value):
     return str(value).replace('.',',')
@@ -411,7 +418,7 @@ class AccountBmdExport(models.TransientModel):
                               customerContent)
             self.checkpoint("Personenkonten written to zip, start Buchungszeilen")
 
-            
+
             entryContent = self.export_account_movements()
             self.checkpoint("Finished Buchungszeilen")
             zip_file.writestr(sanitize_filename(f'Buchungszeilen_{formatted_company}_{formatted_date_from}_{formatted_date_to}.csv'),
