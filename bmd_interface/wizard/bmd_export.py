@@ -181,7 +181,8 @@ class AccountBmdExport(models.TransientModel):
 
         #customers = self.env['res.partner'].search([])
         customers = self.env['res.partner'].search([
-            ('property_account_receivable_id.code', 'in', account_codes), '|',
+            '|',
+            ('property_account_receivable_id.code', 'in', account_codes),
             ('property_account_payable_id.code', 'in', account_codes)
         ])
         date_form = self.env['account.bmd'].search([])[-1]
