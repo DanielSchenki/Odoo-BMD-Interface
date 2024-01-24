@@ -194,9 +194,9 @@ class AccountBmdExport(models.TransientModel):
         writer = csv.DictWriter(customer_buffer, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
         for customer in customers:
-            if customer.company_id.id != date_form.company.id:
-                continue
-            if customer.property_account_receivable_id in account_codes:
+            ###if customer.company_id.id != date_form.company.id:
+            ###    continue
+            if customer.property_account_receivable_id.code in account_codes:
             # Write row for receivable account
                 writer.writerow({
                     'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
@@ -207,7 +207,7 @@ class AccountBmdExport(models.TransientModel):
                     'UID-Nummer': customer.vat if customer.vat else '',
                     'Land': customer.state_id.code if customer.state_id else '', })
             # Write row for payable account
-            if customer.property_account_payable_id in account_codes:
+            if customer.property_account_payable_id.code in account_codes:
                 writer.writerow({
                     'Konto-Nr': customer.property_account_payable_id.code if customer.property_account_payable_id else '',
                     'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
@@ -217,7 +217,8 @@ class AccountBmdExport(models.TransientModel):
                     'UID-Nummer': customer.vat if customer.vat else '',
                     'Land': customer.state_id.code if customer.state_id else '', })
 
-            return customer_buffer.getvalue()
+
+        return customer_buffer.getvalue()
 
     # Returns the booking lines
     def get_account_movements(self):
