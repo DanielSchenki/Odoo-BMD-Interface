@@ -158,8 +158,34 @@ class AccountBmdExport(models.TransientModel):
     # Returns the customers
     @api.model
     def export_customers(self):
-        customers = self.env['res.partner'].search([])
+
+        journal_items = self.env['account.move.line'].search([])
         date_form = self.env['account.bmd'].search([])[-1]
+        account_codes = []
+
+        journal_items = sorted(journal_items, key=lambda x: x.move_id.id)
+
+        for line in journal_items:
+
+            if line.company_id.id != date_form.company.id:
+                continue
+
+            belegdatum = line.date
+            if date_form.period_date_from > belegdatum or belegdatum > date_form.period_date_to:
+                continue
+
+            if line.account_id.code>9999:
+                account_codes.append(line.account_id.code)
+
+
+
+        #customers = self.env['res.partner'].search([])
+        customers = self.env['res.partner'].search([
+            ('property_account_receivable_id.code', 'in', account_codes), '|',
+            ('property_account_payable_id.code', 'in', account_codes)
+        ])
+        date_form = self.env['account.bmd'].search([])[-1]
+
         # Write to the CSV file
         customer_buffer = io.StringIO()
         fieldnames = ['Konto-Nr', 'Name', 'Straße', 'PLZ', 'Ort', 'Land', 'UID-Nummer', 'E-Mail', 'Webseite', 'Phone',
@@ -169,24 +195,26 @@ class AccountBmdExport(models.TransientModel):
         for customer in customers:
             if customer.company_id.id != date_form.company.id:
                 continue
+            if customer.property_account_receivable_id in account_codes:
             # Write row for receivable account
-            writer.writerow({
-                'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
-                'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
-                'Phone': customer.phone if customer.phone else '', 'Ort': customer.city if customer.city else '',
-                'Straße': customer.street if customer.street else '', 'PLZ': customer.zip if customer.zip else '',
-                'Webseite': customer.website if customer.website else '',
-                'UID-Nummer': customer.vat if customer.vat else '',
-                'Land': customer.state_id.code if customer.state_id else '', })
+                writer.writerow({
+                    'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
+                    'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
+                    'Phone': customer.phone if customer.phone else '', 'Ort': customer.city if customer.city else '',
+                    'Straße': customer.street if customer.street else '', 'PLZ': customer.zip if customer.zip else '',
+                    'Webseite': customer.website if customer.website else '',
+                    'UID-Nummer': customer.vat if customer.vat else '',
+                    'Land': customer.state_id.code if customer.state_id else '', })
             # Write row for payable account
-            writer.writerow({
-                'Konto-Nr': customer.property_account_payable_id.code if customer.property_account_payable_id else '',
-                'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
-                'Phone': customer.phone if customer.phone else '', 'Ort': customer.city if customer.city else '',
-                'Straße': customer.street if customer.street else '', 'PLZ': customer.zip if customer.zip else '',
-                'Webseite': customer.website if customer.website else '',
-                'UID-Nummer': customer.vat if customer.vat else '',
-                'Land': customer.state_id.code if customer.state_id else '', })
+            if customer.property_account_payable_id in account_codes:
+                writer.writerow({
+                    'Konto-Nr': customer.property_account_payable_id.code if customer.property_account_payable_id else '',
+                    'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
+                    'Phone': customer.phone if customer.phone else '', 'Ort': customer.city if customer.city else '',
+                    'Straße': customer.street if customer.street else '', 'PLZ': customer.zip if customer.zip else '',
+                    'Webseite': customer.website if customer.website else '',
+                    'UID-Nummer': customer.vat if customer.vat else '',
+                    'Land': customer.state_id.code if customer.state_id else '', })
 
             return customer_buffer.getvalue()
 
