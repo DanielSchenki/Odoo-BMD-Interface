@@ -174,7 +174,7 @@ class AccountBmdExport(models.TransientModel):
             if date_form.period_date_from > belegdatum or belegdatum > date_form.period_date_to:
                 continue
 
-            if line.account_id.code>9999:
+            if len(str(line.account_id.code))>5:
                 account_codes.append(line.account_id.code)
 
 
