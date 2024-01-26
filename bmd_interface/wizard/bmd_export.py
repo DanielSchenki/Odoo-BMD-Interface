@@ -159,33 +159,15 @@ class AccountBmdExport(models.TransientModel):
     @api.model
     def export_customers(self):
 
-        journal_items = self.env['account.move.line'].search([])
-        date_form = self.env['account.bmd'].search([])[-1]
-        account_codes = []
+        journal_items = self.get_account_movements()
+        accounts = []
 
-        journal_items = sorted(journal_items, key=lambda x: x.move_id.id)
+        customers = self.env['res.partner'].search([])
 
         for line in journal_items:
-
-            if line.company_id.id != date_form.company.id:
-                continue
-
-            belegdatum = line.date
-            if date_form.period_date_from > belegdatum or belegdatum > date_form.period_date_to:
-                continue
-
-            if len(str(line.account_id.code))>5:
-                account_codes.append(line.account_id.code)
-
-
-
-        #customers = self.env['res.partner'].search([])
-        customers = self.env['res.partner'].search([
-            '|',
-            ('property_account_receivable_id.code', 'in', account_codes),
-            ('property_account_payable_id.code', 'in', account_codes)
-        ])
-        date_form = self.env['account.bmd'].search([])[-1]
+            for customer in customers:
+                if customer.id == line['partner_id']:
+                    accounts.append(customer)
 
         # Write to the CSV file
         customer_buffer = io.StringIO()
@@ -193,12 +175,8 @@ class AccountBmdExport(models.TransientModel):
                       'IBAN', 'Zahlungsziel', 'Skonto', 'Skontotage']
         writer = csv.DictWriter(customer_buffer, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
-        for customer in customers:
-            ###if customer.company_id.id != date_form.company.id:
-            ###    continue
-            if customer.property_account_receivable_id.code in account_codes:
-            # Write row for receivable account
-                writer.writerow({
+        for customer in accounts:
+            writer.writerow({
                     'Konto-Nr': customer.property_account_receivable_id.code if customer.property_account_receivable_id else '',
                     'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
                     'Phone': customer.phone if customer.phone else '', 'Ort': customer.city if customer.city else '',
@@ -206,9 +184,7 @@ class AccountBmdExport(models.TransientModel):
                     'Webseite': customer.website if customer.website else '',
                     'UID-Nummer': customer.vat if customer.vat else '',
                     'Land': customer.state_id.code if customer.state_id else '', })
-            # Write row for payable account
-            if customer.property_account_payable_id.code in account_codes:
-                writer.writerow({
+            writer.writerow({
                     'Konto-Nr': customer.property_account_payable_id.code if customer.property_account_payable_id else '',
                     'Name': customer.name if customer.name else '', 'E-Mail': customer.email if customer.email else '',
                     'Phone': customer.phone if customer.phone else '', 'Ort': customer.city if customer.city else '',
@@ -273,6 +249,7 @@ class AccountBmdExport(models.TransientModel):
             waehrung = ''
             move_id = line.move_id.id
             additional_documents = []
+            partner_id = ''
 
             attachments = self.env['ir.attachment'].search([])
             for att in attachments:
@@ -289,6 +266,7 @@ class AccountBmdExport(models.TransientModel):
                 if line.display_type != 'product':
                     continue
                 gkonto = line.partner_id.property_account_receivable_id.code
+                partner_id = line.partner_id.id
                 temp_gkonto = gkonto
                 gkonto = konto
                 konto = temp_gkonto
@@ -305,6 +283,7 @@ class AccountBmdExport(models.TransientModel):
                 if line.display_type != 'product':
                     continue
                 gkonto = line.partner_id.property_account_payable_id.code
+                partner_id = line.partner_id.id
                 temp_gkonto = gkonto
                 gkonto = konto
                 konto = temp_gkonto
@@ -363,14 +342,14 @@ class AccountBmdExport(models.TransientModel):
                  'prozent': replace_dot_with_comma(prozent),
                  'steuer': replace_dot_with_comma(steuer), 'fwbetrag': replace_dot_with_comma(fwbetrag),
                  'fwsteuer': replace_dot_with_comma(fwsteuer), 'waehrung': waehrung, 'text': text, 'buchsymbol': buchsymbol,
-                 'move_id': move_id, 'dokument': sanitize_filename(dokument)})
+                 'move_id': move_id, 'dokument': sanitize_filename(dokument), 'partner_id': partner_id})
 
             if additional_documents:
                 for doc in additional_documents:
                     result_data.append({
                         'satzart': '5', 'konto': '', 'gKonto': '', 'belegnr': '', 'belegdatum': '', 'steuercode': '',
                         'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'fwbetrag': '', 'fwsteuer': '', 'waehrung': '', 'text': '', 'buchsymbol': '',
-                        'move_id': '', 'dokument': sanitize_filename(doc['document'])})
+                        'move_id': '', 'dokument': sanitize_filename(doc['document']), 'partner_id': partner_id})
 
         #self.checkpoint("Finished journal_items loop")
         # Remove tax lines and haben buchung
@@ -408,6 +387,7 @@ class AccountBmdExport(models.TransientModel):
 
         writer.writeheader()
         for row in self.get_account_movements():
+            del row['partner_id']
             del row['move_id']
             cleaned_row = {key: value.replace('\n', ' ') if isinstance(value, str) else value for key, value in
                            row.items()}
