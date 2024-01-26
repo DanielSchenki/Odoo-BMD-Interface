@@ -236,6 +236,7 @@ class AccountBmdExport(models.TransientModel):
         docs = []
 
         journal_items = sorted(journal_items, key=lambda x: x.move_id.id)
+        move_ids = set()
 
         #self.checkpoint("Start journal_items loop")
         for line in journal_items:
@@ -265,27 +266,11 @@ class AccountBmdExport(models.TransientModel):
             else:
                 steuercode = "2"
 
-            if line.debit > 0:
-                buchcode = 1
-                haben_buchung = False
-            else:
-                buchcode = 2
-                haben_buchung = True
-
-            if haben_buchung:
-                betrag = -line.credit  # Haben Buchungen müssen negativ sein
-            else:
-                betrag = line.debit
-
-            for invoice_line in line.move_id.invoice_line_ids:
-                if invoice_line.credit > 0:
-                    gkonto = invoice_line.account_id.code
-
             satzart = 0
-            # Rounding
-            betrag = commercial_round_3_digits(betrag)
-            steuer = commercial_round_3_digits(steuer)
             dokument = ''
+            fwbetrag = ''
+            fwsteuer = ''
+            waehrung = ''
             move_id = line.move_id.id
             additional_documents = []
 
@@ -330,6 +315,14 @@ class AccountBmdExport(models.TransientModel):
                 else:
                     betrag = -betrag
 
+            #special logic for foreign currency ERs
+            if buchsymbol == 'ER' and line.move_id.currency_id != line.company_id.currency_id:
+                fwbetrag = -line.amount_currency
+                betrag = line.move_id.amount_total_signed
+                steuer = -line.move_id.amount_tax_signed
+                fwsteuer = line.move_id.amount_tax
+                waehrung = line.move_id.currency_id.name
+
             #special logic for BKs and KAs
             if buchsymbol == 'BK' or buchsymbol == 'KA':
                 if line.matching_number == False:
@@ -338,20 +331,45 @@ class AccountBmdExport(models.TransientModel):
                     konto = line.account_id.code
                     gkonto = line.payment_id.outstanding_account_id.code
 
+            #special logic for SOs
+            if buchsymbol == 'SO':
+                if line.move_id.id in move_ids:
+                    continue
+                if line.debit > 0:
+                    buchcode = 1
+                    haben_buchung = False
+                else:
+                    buchcode = 2
+                    haben_buchung = True
 
+                if haben_buchung:
+                    betrag = -line.credit  # Haben Buchungen müssen negativ sein
+                else:
+                    betrag = line.debit
+
+                for invoice_line in line.move_id.invoice_line_ids:
+                    if line.move_id.id == invoice_line.move_id.id and konto != invoice_line.account_id.code:
+                        gkonto = invoice_line.account_id.code
+
+                move_ids.add(line.move_id.id)
+
+            # Rounding
+            betrag = commercial_round_3_digits(betrag)
+            steuer = commercial_round_3_digits(steuer)
 
             result_data.append(
                 {'satzart': satzart, 'konto': konto, 'gKonto': gkonto, 'belegnr': belegnr, 'belegdatum': belegdatum,
                  'steuercode': steuercode, 'buchcode': buchcode, 'betrag': replace_dot_with_comma(betrag),
                  'prozent': replace_dot_with_comma(prozent),
-                 'steuer': replace_dot_with_comma(steuer), 'text': text, 'buchsymbol': buchsymbol,
+                 'steuer': replace_dot_with_comma(steuer), 'fwbetrag': replace_dot_with_comma(fwbetrag),
+                 'fwsteuer': replace_dot_with_comma(fwsteuer), 'waehrung': waehrung, 'text': text, 'buchsymbol': buchsymbol,
                  'move_id': move_id, 'dokument': sanitize_filename(dokument)})
 
             if additional_documents:
                 for doc in additional_documents:
                     result_data.append({
                         'satzart': '5', 'konto': '', 'gKonto': '', 'belegnr': '', 'belegdatum': '', 'steuercode': '',
-                        'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'text': '', 'buchsymbol': '',
+                        'buchcode': '', 'betrag': '', 'prozent': '', 'steuer': '', 'fwbetrag': '', 'fwsteuer': '', 'waehrung': '', 'text': '', 'buchsymbol': '',
                         'move_id': '', 'dokument': sanitize_filename(doc['document'])})
 
         #self.checkpoint("Finished journal_items loop")
@@ -385,7 +403,7 @@ class AccountBmdExport(models.TransientModel):
     def export_account_movements(self):
         csvBuffer = io.StringIO()
         fieldnames = ['satzart', 'konto', 'gKonto', 'belegnr', 'belegdatum', 'steuercode', 'buchcode', 'betrag',
-                      'prozent', 'steuer', 'text', 'buchsymbol', 'dokument']
+                      'prozent', 'steuer', 'fwbetrag', 'fwsteuer', 'waehrung', 'text', 'buchsymbol', 'dokument']
         writer = csv.DictWriter(csvBuffer, fieldnames=fieldnames, delimiter=';')
 
         writer.writeheader()
