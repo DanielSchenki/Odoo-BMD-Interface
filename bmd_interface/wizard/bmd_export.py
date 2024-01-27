@@ -138,7 +138,7 @@ class AccountBmdExport(models.TransientModel):
                         'Konto-Nr': acc.code,
                         'Bezeichnung': acc.name,
                         'Ustcode': steuercode,
-                        'USTPz': int(tax.amount),
+                        'USTPz': replace_dot_with_comma(tax.amount),
                         'Kontoart': kontoart
                     })
 
@@ -160,6 +160,7 @@ class AccountBmdExport(models.TransientModel):
     def export_customers(self):
 
         journal_items = self.get_account_movements()
+        date_form = self.env['account.bmd'].search([])[-1]
         accounts = []
 
         customers = self.env['res.partner'].search([])
